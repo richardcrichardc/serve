@@ -1,0 +1,109 @@
+#!/bin/bash -e
+
+# Site deployment script for *.richardc.net
+
+function usage {
+  echo "Usage: $0 start|stop|deploy|undeploy sitename"
+  exit 1
+}
+
+# Check arguments
+if [ "$#" -ne 2 ]; then
+  usage
+fi
+
+# Find where this script is
+HERE=`realpath "$( dirname "${BASH_SOURCE[0]}" )"`
+
+# Set up env vars, export for use by site's start script
+export SITE=$2
+export VAR_DIR=$HERE/var/sites/$SITE
+export SRC_DIR=$HERE/src
+
+# Looks for site dir in private-sites first then default to sites
+# Private-sites will be excluded from public github repo
+export SITE_DIR=$HERE/private-sites/$SITE
+if [[ ! -e "$SITE_DIR" ]]; then
+  export SITE_DIR=$HERE/sites/$SITE
+fi
+
+# $DOMAIN is the TLD for all sites. It varies depending on if this is running
+# on the development or production system. `touch dev_server` to indicate development.
+if [ -f "$HERE/dev_server" ]; then
+  export DOMAIN=blog-dev.richardc.net
+else
+  export DOMAIN=blog.richardc.net
+fi
+
+# Server and root directory of production used by deploy subcommands
+PROD_SERVER=bakerloo.richardc.net
+PROD_DIR=serve
+
+case "$1" in
+
+  build)
+    # Run site's build script, if it exists, from site directory
+    if [ -e $SITE_DIR/build ]; then
+      cd $SITE_DIR
+      $SITE_DIR/build
+    else
+      echo "No build script for site."
+      exit 1
+    fi
+    ;;
+
+  start)
+    # First stop the site if it is already up
+    $0 stop $SITE
+    echo $VAR_DIR
+
+    # Run site's start script, if it exists, from site directory
+    if [ -e $SITE_DIR/start ]; then
+      cd $SITE_DIR
+      $SITE_DIR/start
+    fi
+
+    # Substitute in env vars and add site's nginx.conf to enabled sites
+    # SITE_DIR must be substituted before SITE for correct operation
+    TMP_NGINX_CONF=`mktemp`
+    sed -e"s|\$SITE_DIR|$SITE_DIR|g" \
+        -e"s|\$SITE|$SITE|g" \
+        -e"s|\$DOMAIN|$DOMAIN|g" \
+        -e"s|\$VAR_DIR|$VAR_DIR|g" \
+        < $SITE_DIR/nginx.conf \
+        > $TMP_NGINX_CONF
+    sudo mv $TMP_NGINX_CONF /etc/nginx/sites-enabled/$SITE
+
+    # Reload nginx to start serving site
+    sudo service nginx reload
+    ;;
+
+  stop)
+    # Stop and delete container
+    docker kill $SITE > /dev/null || true
+    docker rm $SITE > /dev/null || true
+
+    # Remove site's nginx configuration and restart nginx
+    sudo rm -f /etc/nginx/sites-enabled/$SITE
+    sudo service nginx reload
+    ;;
+
+  deploy)
+    # Deploy a site to production
+
+    # Rsync all sites up to production server
+    rsync -avz --delete $HERE/site $HERE/src $HERE/sites $HERE/private-sites $PROD_SERVER:$PROD_DIR
+
+    # Run start subcommand on the production server
+    ssh -t $PROD_SERVER $PROD_DIR/site start $SITE
+    ;;
+
+  undeploy)
+    # Take a site down on production
+    ssh -t $PROD_SERVER $PROD_DIR/site stop $SITE
+    ;;
+
+  *)
+    # Unrecognised command - print usage message
+    usage
+esac

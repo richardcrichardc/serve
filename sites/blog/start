@@ -1,0 +1,18 @@
+#!/bin/bash -e
+
+mkdir -p $VAR_DIR/content
+sudo chown www-data:www-data $VAR_DIR/content
+mkdir -p $VAR_DIR/log
+
+# Build docker image
+docker build -t trusty $SRC_DIR/trusty
+docker build -t nodejs $SRC_DIR/nodejs
+docker build -t ghost $SRC_DIR/ghost
+
+# Run container
+# see Dockerfile for details on volumes
+docker run --name $SITE -d \
+    -v $SITE_DIR/config.js:/config.js \
+    -v $VAR_DIR/content:/content \
+    -p 127.0.0.1:9000:8000\
+    ghost
