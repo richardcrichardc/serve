@@ -4,8 +4,8 @@ MAINTAINER Richard Collins <richardc@richardc.net>
 
 RUN mkdir /ghost \
  && cd /ghost \
- && wget https://ghost.org/zip/ghost-0.5.1.zip \
- && unzip ghost-0.5.1.zip \
+ && wget https://ghost.org/zip/ghost-0.5.9.zip \
+ && unzip ghost-0.5.9.zip \
  && npm install --production
 
 
